@@ -1,0 +1,127 @@
+#include <Servo.h>
+
+
+// --- PIN ASSIGNMENTS ---
+const int trigPin = 7;
+const int echoPin = 6;
+const int ledPin  = 13;
+const int fanPin  = 9;
+const int armPin  = 10;
+const int sweepPin = 11;
+
+
+// --- SETTINGS ---
+const int clogThreshold = 20; // Distance in cm to trigger cleaning
+const int stopValue = 90;     // Signal to STOP continuous servos
+const int speedValue = 99;   // Signal for FULL SPEED continuous servos
+
+
+Servo fanSpin;     
+Servo retractArm;  
+Servo sweeper;     
+
+
+void setup() {
+ // Attach Servos
+ fanSpin.attach(fanPin);
+ retractArm.attach(armPin);
+ sweeper.attach(sweepPin);
+
+
+ // Initialize Pins
+ pinMode(trigPin, OUTPUT);
+ pinMode(echoPin, INPUT);
+ pinMode(ledPin, OUTPUT);
+
+
+ // Set Home Positions
+ retractArm.write(0);   // Arm tucked inside
+ fanSpin.write(stopValue);   // Fan OFF
+ sweeper.write(90);   // Sweeper OFF
+  Serial.begin(9600);
+}
+
+
+void loop() {
+ long distance = getDistance();
+ //read the distance
+ Serial.print("Monitoring Drain... Distance: ");
+ Serial.print(distance);
+ Serial.println(" cm");
+
+
+ // Only trigger if debris is detected (ignore 0 which is a sensor error)
+ if (distance > 0 && distance < clogThreshold) {
+   Serial.println("CLOG DETECTED! Initiating Clean Cycle...");
+   cleanDrainSequence();
+ }
+
+
+ delay(1000); // Wait 1 second between scans
+}
+
+
+long getDistance() {
+ digitalWrite(trigPin, LOW);
+ delayMicroseconds(2);
+ digitalWrite(trigPin, HIGH);
+ delayMicroseconds(10);
+ digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH);
+ if (duration == 0) return 999;
+ return duration * 0.034 / 2;
+}
+
+
+void cleanDrainSequence() {
+ // 1. VISUAL WARNING
+ // Pulse the LED to alert pedestrians
+ for(int i = 0; i < 6; i++) {
+   digitalWrite(ledPin, !digitalRead(ledPin));
+   delay(300);
+ }
+ digitalWrite(ledPin, HIGH); // Keep on during mechanical work
+
+
+ // 2. EXTEND ARM
+ // Moving the arm out slowly (Standard Servo logic)
+ for (int pos = 0; pos <= 60; pos++) {
+   retractArm.write(pos);
+   delay(20);
+ }
+ delay(500);
+
+
+ // 3. ACTIVATE CLEANERS (Fan + Sweeper)
+ fanSpin.write(speedValue); // Turn on the fan
+  // Oscillate the sweeper back and forth 3 times
+ for (int cycles = 0; cycles < 3; cycles++) {
+   // Sweep Forward
+   sweeper.write(160);
+   delay(1000); // Moves for 1 second
+  
+   // Sweep Backward
+   sweeper.write(30);
+   delay(1000); // Moves for 1 second
+ }
+
+
+ // 4. POWER DOWN CLEANERS
+ fanSpin.write(stopValue); // STOP the fan
+ sweeper.write(stopValue); // STOP the sweeper
+ delay(1000); // Brief pause to ensure all motion has stopped
+
+
+ // 5. RETRACT ARM
+ // Pulling the arm back inside the drain
+ for (int pos = 90; pos >= 0; pos--) {
+   retractArm.write(pos);
+   delay(20);
+ }
+
+
+ // 6. FINAL RESET
+ digitalWrite(ledPin, LOW);
+ Serial.println("Cleaning Complete. System Standby.");
+ delay(5000); // Cool-down period before next scan
+}
